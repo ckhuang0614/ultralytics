@@ -763,6 +763,7 @@ class Exporter:
     @try_export
     def export_mnn(self, prefix=colorstr("MNN:")):
         """Export YOLO model to MNN format using MNN https://github.com/alibaba/MNN."""
+        assert not IS_PYTHON_3_13, "MNN export not supported on Python 3.13"
         from ultralytics.utils.export.mnn import onnx2mnn
 
         f_onnx = self.export_onnx()
