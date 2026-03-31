@@ -179,14 +179,14 @@ class DINOv3STAs(nn.Module):
         if not cfg:
             return None
 
-        compact_arch_name = cfg.get("compact_arch_name")
         patch_size = cfg.get("patch_size")
         weights = cfg.get("weights")
-        if not compact_arch_name or not patch_size or weights is None:
+        if not patch_size or weights is None:
             return None
 
         weight_name = str(getattr(weights, "value", weights)).lower()
-        model_arch = f"{compact_arch_name}{patch_size}"
+        # Use the config key-derived arch slug to preserve official ordering, e.g. vits16plus not vitsplus16.
+        model_arch = name.removeprefix("dinov3_")
         hash_suffix = DINOV3_HASH_SUFFIX.get(model_arch)
         if not hash_suffix:
             return None
