@@ -189,8 +189,11 @@ class DetectionValidator(BaseValidator):
                     "pred_cls": np.zeros(0) if no_pred else predn["cls"].cpu().numpy(),
                 }
             )
-            self.metrics.update_image_stats(
-                {"image": pbatch["im_file"], **self.confusion_matrix.image_metrics(predn, pbatch, conf=self.args.conf)}
+            self.metrics.update_image_metrics(
+                {
+                    "image": pbatch["im_file"],
+                    **self.confusion_matrix.get_image_metrics(predn, pbatch, conf=self.args.conf),
+                }
             )
             # Evaluate
             if self.args.plots:
@@ -233,7 +236,7 @@ class DetectionValidator(BaseValidator):
                 for key in merged_stats:
                     merged_stats[key].extend(stats_dict[key])
             gathered_image_stats = [None] * dist.get_world_size()
-            dist.gather_object(self.metrics.image_stats, gathered_image_stats, dst=0)
+            dist.gather_object(self.metrics.image_metrics, gathered_image_stats, dst=0)
             merged_image_stats = []
             for image_stats in gathered_image_stats:
                 merged_image_stats.extend(image_stats)
@@ -243,11 +246,11 @@ class DetectionValidator(BaseValidator):
             for jdict in gathered_jdict:
                 self.jdict.extend(jdict)
             self.metrics.stats = merged_stats
-            self.metrics.image_stats = merged_image_stats
+            self.metrics.image_metrics = merged_image_stats
             self.seen = len(self.dataloader.dataset)  # total image count from dataset
         elif RANK > 0:
             dist.gather_object(self.metrics.stats, None, dst=0)
-            dist.gather_object(self.metrics.image_stats, None, dst=0)
+            dist.gather_object(self.metrics.image_metrics, None, dst=0)
             dist.gather_object(self.jdict, None, dst=0)
             self.jdict = []
             self.metrics.clear_stats()

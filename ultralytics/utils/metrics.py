@@ -452,7 +452,7 @@ class ConfusionMatrix(DataExportMixin):
             matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
         return detections, gt_classes, detection_classes, matches
 
-    def image_metrics(
+    def get_image_metrics(
         self, detections: dict[str, torch.Tensor], batch: dict[str, Any], conf: float = 0.25, iou_thres: float = 0.45
     ) -> dict[str, float]:
         """Return per-image TP, FP, FN, precision, and recall using confusion-matrix filtering and matching."""
@@ -1069,7 +1069,7 @@ class DetMetrics(SimpleClass, DataExportMixin):
         self.box = Metric()
         self.speed = {"preprocess": 0.0, "inference": 0.0, "loss": 0.0, "postprocess": 0.0}
         self.stats = dict(tp=[], conf=[], pred_cls=[], target_cls=[], target_img=[])
-        self.image_stats = []
+        self.image_metrics = []
         self.nt_per_class = None
         self.nt_per_image = None
 
@@ -1083,9 +1083,9 @@ class DetMetrics(SimpleClass, DataExportMixin):
         for k in self.stats.keys():
             self.stats[k].append(stat[k])
 
-    def update_image_stats(self, stat: dict[str, Any]) -> None:
+    def update_image_metrics(self, stat: dict[str, Any]) -> None:
         """Store per-image detection counts and derived metrics."""
-        self.image_stats.append(stat)
+        self.image_metrics.append(stat)
 
     def process(self, save_dir: Path = Path("."), plot: bool = False, on_plot=None) -> dict[str, np.ndarray]:
         """Process predicted results for object detection and update metrics.
@@ -1122,7 +1122,6 @@ class DetMetrics(SimpleClass, DataExportMixin):
         """Clear the stored statistics."""
         for v in self.stats.values():
             v.clear()
-        # self.image_stats.clear()
 
     @property
     def keys(self) -> list[str]:
