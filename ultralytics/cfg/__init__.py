@@ -85,6 +85,13 @@ TASK2METRIC = {
     "obb": "metrics/mAP50-95(B)",
     "reid": "metrics/mAP",
 }
+TASK_CUSTOM_KEYS = {
+    "reid": {
+        "reid_p", "reid_k", "triplet_margin", "triplet_weight", "ce_weight",
+        "center_weight", "center_momentum", "focal_gamma", "supcon_temp",
+        "reid_reranking", "reid_tta",
+    },
+}
 
 ARGV = sys.argv or ["", ""]  # sometimes sys.argv = []
 SOLUTIONS_HELP_MSG = f"""
@@ -249,8 +256,6 @@ CFG_BOOL_KEYS = frozenset(
         "nms",
         "profile",
         "end2end",
-        "reid_reranking",
-        "reid_tta",
     }
 )
 
@@ -318,7 +323,8 @@ def get_cfg(
     # Merge overrides
     if overrides:
         overrides = cfg2dict(overrides)
-        check_dict_alignment(cfg, overrides)
+        task_keys = TASK_CUSTOM_KEYS.get(overrides.get("task", cfg.get("task", "")), set())
+        check_dict_alignment(cfg, overrides, allowed_custom_keys={"augmentations", "save_dir"} | task_keys)
         cfg = {**cfg, **overrides}  # merge cfg and overrides dicts (prefer overrides)
 
     # Special handling for numeric project/name
@@ -918,8 +924,9 @@ def entrypoint(debug: str = "") -> None:
         else:
             check_dict_alignment(full_args_dict, {a: ""})
 
-    # Check keys
-    check_dict_alignment(full_args_dict, overrides)
+    # Check keys (allow task-specific custom keys)
+    task_keys = TASK_CUSTOM_KEYS.get(overrides.get("task", ""), set())
+    check_dict_alignment(full_args_dict, overrides, allowed_custom_keys={"augmentations", "save_dir"} | task_keys)
 
     # Mode
     mode = overrides.get("mode")
