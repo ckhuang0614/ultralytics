@@ -1602,20 +1602,24 @@ class ReidMetrics(SimpleClass, DataExportMixin):
             query_pids (np.ndarray): Query person IDs (Q,).
             query_camids (np.ndarray): Query camera IDs (Q,).
         """
+        # Skip same-pid-same-camid exclusion when camera info is unavailable (all camids unique)
+        has_camid = len(set(self.gallery_camids.tolist())) < len(self.gallery_camids)
+
         all_ap = []
         all_cmc = []
         for i in range(len(query_pids)):
             q_pid = query_pids[i]
-            q_camid = query_camids[i]
 
             # Sort gallery by distance
             order = np.argsort(dist[i])
             g_pids = self.gallery_pids[order]
-            g_camids = self.gallery_camids[order]
 
             # Remove same pid + same camid (standard Market-1501 protocol)
-            keep = ~((g_pids == q_pid) & (g_camids == q_camid))
-            g_pids = g_pids[keep]
+            if has_camid:
+                q_camid = query_camids[i]
+                g_camids = self.gallery_camids[order]
+                keep = ~((g_pids == q_pid) & (g_camids == q_camid))
+                g_pids = g_pids[keep]
 
             # Binary match vector
             matches = (g_pids == q_pid).astype(np.float32)

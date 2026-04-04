@@ -34,6 +34,7 @@ from .base import BaseDataset
 from .converter import merge_multi_segment
 from .utils import (
     HELP_URL,
+    IMG_FORMATS,
     check_file_speeds,
     get_hash,
     img2label_paths,
@@ -689,51 +690,30 @@ class SemanticDataset(BaseDataset):
 
 
 class ClassificationDataset:
-    """Dataset class for image classification tasks wrapping torchvision ImageFolder functionality.
+    """Dataset class for image classification tasks with reusable verification, caching, and transform hooks.
 
-    This class offers functionalities like image augmentation, caching, and verification. It's designed to efficiently
-    handle large datasets for training deep learning models, with optional image transformations and caching mechanisms
-    to speed up training.
-
-    Attributes:
-        cache_ram (bool): Indicates if caching in RAM is enabled.
-        cache_disk (bool): Indicates if caching on disk is enabled.
-        samples (list): A list of lists, each containing the path to an image, its class index, path to its .npy cache
-            file (if caching on disk), and optionally the loaded image array (if caching in RAM).
-        torch_transforms (callable): PyTorch transforms to be applied to the images.
-        root (str): Root directory of the dataset.
-        prefix (str): Prefix for logging and cache filenames.
-
-    Methods:
-        __getitem__: Return transformed image and class index for the given sample index.
-        __len__: Return the total number of samples in the dataset.
-        verify_images: Verify all images in dataset.
+    This class wraps torchvision `ImageFolder` by default, but subclasses can override sample discovery and output
+    formatting to reuse the same verified-image and caching pipeline for classification-like tasks.
     """
 
     def __init__(self, root: str, args, augment: bool = False, prefix: str = ""):
-        """Initialize YOLO classification dataset with root directory, arguments, augmentations, and cache settings.
+        """Initialize a classification-style dataset.
 
         Args:
-            root (str): Path to the dataset directory where images are stored in a class-specific folder structure.
-            args (Namespace): Configuration containing dataset-related settings such as image size, augmentation
-                parameters, and cache settings.
-            augment (bool, optional): Whether to apply augmentations to the dataset.
-            prefix (str, optional): Prefix for logging and cache filenames, aiding in dataset identification.
+            root (str): Dataset root path.
+            args (Namespace): Dataset and augmentation configuration.
+            augment (bool, optional): Whether to apply training augmentations.
+            prefix (str, optional): Prefix for logging and cache filenames.
         """
-        import torchvision  # scope for faster 'import ultralytics'
+        self.base = self.build_base_dataset(root)
+        self.root = str(getattr(self.base, "root", root))
+        self.augment = augment
+        self.prefix = colorstr(f"{prefix}: ") if prefix else ""
+        self.samples = self.get_samples()
 
-        # Base class assigned as attribute rather than used as base class to allow for scoping slow torchvision import
-        if TORCHVISION_0_18:  # 'allow_empty' argument first introduced in torchvision 0.18
-            self.base = torchvision.datasets.ImageFolder(root=root, allow_empty=True)
-        else:
-            self.base = torchvision.datasets.ImageFolder(root=root)
-        self.samples = self.base.samples
-        self.root = self.base.root
-
-        # Initialize attributes
         if augment and args.fraction < 1.0:  # reduce training fraction
             self.samples = self.samples[: round(len(self.samples) * args.fraction)]
-        self.prefix = colorstr(f"{prefix}: ") if prefix else ""
+
         self.cache_ram = args.cache is True or str(args.cache).lower() == "ram"  # cache images into RAM
         if self.cache_ram:
             LOGGER.warning(
@@ -741,11 +721,33 @@ class ClassificationDataset:
                 "https://github.com/ultralytics/ultralytics/issues/9824, setting `cache_ram=False`."
             )
             self.cache_ram = False
-        self.cache_disk = str(args.cache).lower() == "disk"  # cache images on hard drive as uncompressed *.npy files
+        self.cache_disk = str(args.cache).lower() == "disk"  # cache images on disk as uncompressed *.npy files
         self.samples = self.verify_images()  # filter out bad images
-        self.samples = [[*list(x), Path(x[0]).with_suffix(".npy"), None] for x in self.samples]  # file, index, npy, im
+        self.samples = [self.cache_sample(sample) for sample in self.samples]
+        self.torch_transforms = self.build_torch_transforms(args, augment)
+
+    def build_base_dataset(self, root: str):
+        """Build the underlying dataset object used to enumerate samples."""
+        import torchvision  # scope for faster 'import ultralytics'
+
+        if TORCHVISION_0_18:  # 'allow_empty' argument first introduced in torchvision 0.18
+            return torchvision.datasets.ImageFolder(root=root, allow_empty=True)
+        return torchvision.datasets.ImageFolder(root=root)
+
+    def get_samples(self) -> list[tuple]:
+        """Return dataset samples as tuples whose first element is the image path."""
+        return self.base.samples
+
+    @staticmethod
+    def cache_sample(sample: tuple) -> list:
+        """Append cache metadata to a verified sample tuple."""
+        return [*list(sample), Path(sample[0]).with_suffix(".npy"), None]
+
+    @staticmethod
+    def build_torch_transforms(args, augment: bool):
+        """Build the torchvision transform pipeline for the dataset."""
         scale = (1.0 - args.scale, 1.0)  # (0.08, 1.0)
-        self.torch_transforms = (
+        return (
             classify_augmentations(
                 size=args.imgsz,
                 scale=scale,
@@ -761,29 +763,29 @@ class ClassificationDataset:
             else classify_transforms(size=args.imgsz)
         )
 
-    def __getitem__(self, i: int) -> dict:
-        """Return transformed image and class index for the given sample index.
-
-        Args:
-            i (int): Index of the sample to retrieve.
-
-        Returns:
-            (dict): Dictionary containing the image and its class index.
-        """
-        f, j, fn, im = self.samples[i]  # filename, index, filename.with_suffix('.npy'), image
+    def load_image(self, i: int) -> tuple[list, Image.Image]:
+        """Load one image sample and return the cached sample metadata plus a PIL image."""
+        sample = self.samples[i]
+        f, fn, im = sample[0], sample[-2], sample[-1]
         if self.cache_ram:
             if im is None:  # Warning: two separate if statements required here, do not combine this with previous line
-                im = self.samples[i][3] = cv2.imread(f)
+                im = self.samples[i][-1] = cv2.imread(f)
         elif self.cache_disk:
             if not fn.exists():  # load npy
                 np.save(fn.as_posix(), cv2.imread(f), allow_pickle=False)
             im = np.load(fn)
         else:  # read image
             im = cv2.imread(f)  # BGR
-        # Convert NumPy array to PIL image
-        im = Image.fromarray(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
-        sample = self.torch_transforms(im)
-        return {"img": sample, "cls": j}
+        return sample, Image.fromarray(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
+
+    def format_item(self, sample: list, image: Image.Image) -> dict:
+        """Format a loaded sample into the dictionary returned by `__getitem__`."""
+        return {"img": self.torch_transforms(image), "cls": sample[1]}
+
+    def __getitem__(self, i: int) -> dict:
+        """Return transformed image and class index for the given sample index."""
+        sample, image = self.load_image(i)
+        return self.format_item(sample, image)
 
     def __len__(self) -> int:
         """Return the total number of samples in the dataset."""
@@ -799,7 +801,7 @@ class ClassificationDataset:
         path = Path(self.root).with_suffix(".cache")  # *.cache file path
 
         try:
-            check_file_speeds([file for (file, _) in self.samples[:5]], prefix=self.prefix)  # check image read speeds
+            check_file_speeds([sample[0] for sample in self.samples[:5]], prefix=self.prefix)  # check image read speeds
             cache = load_dataset_cache_file(path)  # attempt to load a *.cache file
             assert cache["version"] == DATASET_CACHE_VERSION  # matches current version
             assert cache["hash"] == get_hash([x[0] for x in self.samples])  # identical hash
@@ -836,25 +838,11 @@ class ClassificationDataset:
             return samples
 
 
-class ReidDataset:
+class ReidDataset(ClassificationDataset):
     """Dataset class for person re-identification tasks.
 
-    Supports multiple ReID dataset formats via configurable filename regex patterns.
-    The regex must have two capture groups: group(1) = person ID, group(2) = camera ID.
-
-    Built-in patterns:
-        - Market-1501: ``0001_c1s1_000151_01.jpg`` -> pid=1, camid=0
-        - DukeMTMC-reID: ``0001_c1_f0046182.jpg`` -> pid=1, camid=0
-        - MSMT17: ``0001_015_01_0201130904.jpg`` -> pid=1, camid=14
-
-    Skips junk images (pid < 0) and distractors (pid == 0) during training.
-
-    Attributes:
-        samples (list): List of (path, pid, camid) tuples.
-        pid_to_label (dict): Mapping from raw pid to contiguous label.
-        torch_transforms (callable): Image transforms.
-        root (str): Root directory of the dataset.
-        prefix (str): Prefix for logging.
+    This subclasses `ClassificationDataset` to reuse verified-image caching, transform construction, and image loading
+    while keeping ReID-specific filename parsing and pid/camid metadata.
     """
 
     # Default filename patterns for common ReID datasets (group1=pid, group2=camid)
@@ -865,102 +853,61 @@ class ReidDataset:
     }
 
     def __init__(self, root: str, args, augment: bool = False, prefix: str = "", data: dict | None = None):
-        """Initialize ReidDataset.
-
-        Args:
-            root (str): Path to dataset split directory (e.g., bounding_box_train).
-            args (Namespace): Configuration containing image size, augmentation parameters.
-            augment (bool): Whether to apply augmentations.
-            prefix (str): Prefix for logging.
-            data (dict, optional): Dataset YAML config with optional 'filename_re' (regex string or
-                preset name like 'market1501', 'dukemtmc', 'msmt17') and 'cam_0indexed' (bool,
-                whether camera IDs are already 0-indexed, default False).
-        """
-        self.root = root
-        self.prefix = colorstr(f"{prefix}: ") if prefix else ""
-        self.samples = []  # (filepath, pid, camid)
+        """Initialize a ReID dataset."""
+        self.data = data or {}
         self.pid_to_label = {}
+        self.pid_to_indices = defaultdict(list)
+        super().__init__(root=root, args=args, augment=augment, prefix=prefix)
 
+        if self.augment:
+            raw_pids = sorted({pid for _, pid, *_ in self.samples if pid > 0})
+            self.pid_to_label = {pid: label for label, pid in enumerate(raw_pids)}
+
+        for idx, (_, pid, *_) in enumerate(self.samples):
+            label = self.pid_to_label.get(pid, pid)
+            self.pid_to_indices[label].append(idx)
+
+        LOGGER.info(f"{self.prefix}{len(self.samples)} images, {len({pid for _, pid, *_ in self.samples})} identities")
+
+    def build_base_dataset(self, root: str):
+        """Validate the split path and skip ImageFolder construction for flat ReID directories."""
         root_path = Path(root)
         if not root_path.exists():
             raise FileNotFoundError(f"ReID dataset path not found: {root}")
+        return None
 
-        # Determine filename regex pattern
-        data = data or {}
-        re_str = data.get("filename_re", "market1501")
+    def get_samples(self) -> list[tuple]:
+        """Parse ReID samples from a flat image directory using a configurable filename regex."""
+        root_path = Path(self.root)
+        re_str = self.data.get("filename_re", "market1501")
         re_str = self.PATTERNS.get(re_str, re_str)  # resolve preset name or use as-is
         pattern = re.compile(re_str, re.IGNORECASE)
-        cam_offset = 0 if data.get("cam_0indexed", False) else -1  # convert to 0-indexed
+        cam_offset = 0 if self.data.get("cam_0indexed", False) else -1  # convert to 0-indexed
 
-        raw_pids = set()
-
-        for img_path in sorted(root_path.glob("*.jpg")) + sorted(root_path.glob("*.png")):
+        samples = []
+        for idx, img_path in enumerate(
+            sorted(p for p in root_path.iterdir() if p.is_file() and p.suffix[1:].lower() in IMG_FORMATS)
+        ):
             match = pattern.match(img_path.name)
             if match is None:
                 continue
             pid = int(match.group(1))
-            camid = int(match.group(2)) + cam_offset
             if pid < 0:  # junk images
                 continue
-            if pid == 0 and not augment:
-                pass  # keep distractors for gallery; filtered in val
-            raw_pids.add(pid)
-            self.samples.append((str(img_path), pid, camid))
+            if pid == 0 and self.augment:  # skip distractors during training
+                continue
+            try:
+                camid = int(match.group(2)) + cam_offset
+            except IndexError:
+                camid = idx  # no camera group in regex — assign unique id per image
+            samples.append((str(img_path), pid, camid))
+        return samples
 
-        if augment:
-            # For training: create contiguous labels, skip distractors (pid==0)
-            self.samples = [(p, pid, c) for p, pid, c in self.samples if pid > 0]
-            raw_pids = sorted(set(pid for _, pid, _ in self.samples))
-            self.pid_to_label = {pid: label for label, pid in enumerate(raw_pids)}
-        else:
-            # For val/test: keep original pids (used for evaluation)
-            self.pid_to_label = {}
-
-        # Build pid_to_indices for PK sampling
-        self.pid_to_indices = defaultdict(list)
-        for idx, (_, pid, _) in enumerate(self.samples):
-            label = self.pid_to_label.get(pid, pid)
-            self.pid_to_indices[label].append(idx)
-
-        LOGGER.info(
-            f"{self.prefix}{len(self.samples)} images, {len(set(pid for _, pid, _ in self.samples))} identities"
-        )
-
-        scale = (1.0 - args.scale, 1.0)
-        self.torch_transforms = (
-            classify_augmentations(
-                size=args.imgsz,
-                scale=scale,
-                hflip=args.fliplr,
-                vflip=args.flipud,
-                erasing=args.erasing,
-                auto_augment=args.auto_augment,
-                hsv_h=args.hsv_h,
-                hsv_s=args.hsv_s,
-                hsv_v=args.hsv_v,
-            )
-            if augment
-            else classify_transforms(size=args.imgsz)
-        )
-
-    def __getitem__(self, i: int) -> dict:
-        """Return image, identity label, and camera id for a given index.
-
-        Args:
-            i (int): Index of the sample.
-
-        Returns:
-            (dict): Dictionary with 'img', 'cls' (pid label), 'camid', and 'img_path'.
-        """
-        filepath, pid, camid = self.samples[i]
-        im = cv2.imread(filepath)
-        if im is None:
-            raise FileNotFoundError(f"Image not found: {filepath}")
-        im = Image.fromarray(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
-        sample = self.torch_transforms(im)
-        label = self.pid_to_label.get(pid, pid)
-        return {"img": sample, "cls": label, "camid": camid}
-
-    def __len__(self) -> int:
-        """Return the total number of samples."""
-        return len(self.samples)
+    def format_item(self, sample: list, image: Image.Image) -> dict:
+        """Return image, identity label, and camera id for a given index."""
+        _, pid, camid = sample[:3]
+        return {
+            "img": self.torch_transforms(image),
+            "cls": self.pid_to_label.get(pid, pid),
+            "camid": camid,
+        }

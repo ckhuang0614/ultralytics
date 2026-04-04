@@ -9,14 +9,13 @@ import torch
 import torch.distributed as dist
 
 from ultralytics.data import ReidDataset, build_dataloader
-from ultralytics.engine.validator import BaseValidator
+from ultralytics.models.yolo.classify.val import ClassificationValidator
 from ultralytics.utils import LOGGER, RANK, TQDM
 from ultralytics.utils.metrics import ReidMetrics
-from ultralytics.utils.plotting import plot_images
 from ultralytics.utils.torch_utils import smart_inference_mode
 
 
-class ReidValidator(BaseValidator):
+class ReidValidator(ClassificationValidator):
     """Validator for person re-identification models.
 
     Accumulates embeddings, person IDs, and camera IDs during validation, then computes
@@ -71,13 +70,6 @@ class ReidValidator(BaseValidator):
         if gallery_path:
             gallery_path = Path(self.data["path"]) / gallery_path
             self.metrics.update_gallery(*self._extract_gallery_features(gallery_path))
-
-    def preprocess(self, batch: dict[str, Any]) -> dict[str, Any]:
-        """Preprocess batch."""
-        batch["img"] = batch["img"].to(self.device, non_blocking=self.device.type == "cuda")
-        batch["img"] = batch["img"].half() if self.args.half else batch["img"].float()
-        batch["cls"] = batch["cls"].to(self.device, non_blocking=self.device.type == "cuda")
-        return batch
 
     def update_metrics(self, preds, batch: dict[str, Any]) -> None:
         """Accumulate embeddings and metadata.
@@ -192,33 +184,10 @@ class ReidValidator(BaseValidator):
         """Create a ReidDataset instance for validation."""
         return ReidDataset(root=img_path, args=self.args, augment=False, prefix="query", data=self.data)
 
-    def get_dataloader(self, dataset_path: str | Path, batch_size: int) -> torch.utils.data.DataLoader:
-        """Build dataloader for validation.
-
-        Args:
-            dataset_path (str | Path): Path to dataset.
-            batch_size (int): Batch size.
-
-        Returns:
-            (DataLoader): Validation dataloader.
-        """
-        dataset = self.build_dataset(dataset_path)
-        return build_dataloader(dataset, batch_size, self.args.workers, rank=-1)
-
     def print_results(self) -> None:
         """Print evaluation metrics."""
         pf = "%22s" + "%11.4g" * 4
         LOGGER.info(pf % ("Results", self.metrics.mAP, self.metrics.rank1, self.metrics.rank5, self.metrics.rank10))
-
-    def plot_val_samples(self, batch: dict[str, Any], ni: int) -> None:
-        """Plot validation (query) samples with person ID labels."""
-        batch["batch_idx"] = torch.arange(batch["img"].shape[0])
-        plot_images(
-            labels=batch,
-            fname=self.save_dir / f"val_batch{ni}_labels.jpg",
-            names=self.names,
-            on_plot=self.on_plot,
-        )
 
     def plot_predictions(self, batch: dict[str, Any], preds, ni: int) -> None:
         """Plot predictions (no-op for ReID, embeddings are not visual)."""
