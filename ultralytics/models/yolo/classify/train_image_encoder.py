@@ -64,6 +64,10 @@ class _WebDatasetLoader(DataLoader):
             _IterDS(), batch_size=batch_size, num_workers=num_workers, pin_memory=True, drop_last=drop_last
         )
 
+        import types
+
+        object.__setattr__(self, "sampler", types.SimpleNamespace(set_epoch=lambda _: None))
+
     def __iter__(self):
         """Yield batches, stopping at epoch boundary (same pattern as InfiniteDataLoader)."""
         return itertools.islice(super().__iter__(), len(self))
