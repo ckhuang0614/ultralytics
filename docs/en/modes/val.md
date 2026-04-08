@@ -139,8 +139,8 @@ The below examples showcase YOLO model validation with custom arguments in Pytho
 
 !!! tip "Per-Image Precision and Recall"
 
-    Detection validation also stores per-image counts and derived metrics, so you can inspect precision and recall for
-    each image directly after validation.
+    Validation stores per-image precision and recall metrics (at IoU threshold 0.5) for all tasks except classification.
+    Access these metrics through `results.box.image_metrics` after validation completes.
 
     ```python
     from ultralytics import YOLO
@@ -149,19 +149,24 @@ The below examples showcase YOLO model validation with custom arguments in Pytho
     model = YOLO("yolo26n.pt")
 
     # Validate and access per-image metrics
-    results = model.val(data="coco.yaml")
-    results.image_metrics[0]  # {'image': '...', 'tp': ..., 'fp': ..., 'fn': ..., 'precision': ..., 'recall': ...}
+    results = model.val(data="coco8.yaml")
+    
+    # image_metrics is a dictionary with image filenames as keys
+    print(results.box.image_metrics)
+    # Output: {'image1.jpg': {'precision': 0.85, 'recall': 0.92}, 'image2.jpg': {'precision': 0.78, 'recall': 0.88}, ...}
+    
+    # Access metrics for a specific image
+    results.box.image_metrics["image1.jpg"]  # {'precision': 0.85, 'recall': 0.92}
     ```
-     Each entry in `image_metrics` is a dictionary containing the following keys:
 
-    | Key           | Description                                                    |
-    |---------------|----------------------------------------------------------------|
-    | `image`       | File path of the image.                                        |
-    | `tp`          | Number of true positive detections.                            |
-    | `fp`          | Number of false positive detections.                           |
-    | `fn`          | Number of false negative detections (missed ground truths).    |
-    | `precision`   | Precision score for the image (`tp / (tp + fp)`).              |
-    | `recall`      | Recall score for the image (`tp / (tp + fn)`).                 |
+    Each entry in `image_metrics` contains the following keys:
+
+    | Key         | Description                                       |
+    |-------------|---------------------------------------------------|
+    | `precision` | Precision score for the image (`tp / (tp + fp)`). |
+    | `recall`    | Recall score for the image (`tp / (tp + fn)`).    |
+
+    This feature is available for detection, segmentation, pose, and OBB tasks.
 
 | Method      | Return Type            | Description                                                                |
 | ----------- | ---------------------- | -------------------------------------------------------------------------- |
@@ -213,7 +218,7 @@ print(metrics.box.map)  # mAP50-95
 print(metrics.box.map50)  # mAP50
 print(metrics.box.map75)  # mAP75
 print(metrics.box.maps)  # list of mAP50-95 for each category
-print(metrics.image_metrics[0])  # per-image TP, FP, FN, precision, and recall
+print(metrics.box.image_metrics)  # per-image precision and recall dictionary
 ```
 
 For a complete performance evaluation, it's crucial to review all these metrics. For more details, refer to the [Key Features of Val Mode](#key-features-of-val-mode).
