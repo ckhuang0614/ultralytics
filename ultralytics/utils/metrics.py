@@ -879,7 +879,7 @@ class Metric(SimpleClass):
         self.all_ap = []  # (nc, 10)
         self.ap_class_index = []  # (nc, )
         self.nc = 0
-        self.image_metrics = []
+        self.image_metrics = {}
 
     @property
     def ap50(self) -> np.ndarray | list:
@@ -1009,7 +1009,7 @@ class Metric(SimpleClass):
             [self.px, self.r_curve, "Confidence", "Recall"],
         ]
 
-    def pr_per_image(self, tp: np.ndarray, target_cls: np.ndarray, pred_cls: np.ndarray, im_file: str) -> None:
+    def pr_per_image(self, tp: np.ndarray, target_cls: np.ndarray, pred_cls: np.ndarray, im_name: str) -> None:
         """Calculate per-image precision and recall at IoU threshold of 0.5.
 
         Computes precision and recall for a single image based on true positive matches,
@@ -1021,13 +1021,13 @@ class Metric(SimpleClass):
                 where the first column (IoU >= 0.5) is used.
             target_cls (np.ndarray): Ground truth class labels for the image.
             pred_cls (np.ndarray): Predicted class labels for the image.
-            im_file (str): Path to the image file.
+            im_name (str): The name of the image file, used for tracking metrics per image.
         """
         # pick the tp with iou > 0.5 by default
         tp = tp[:, 0].sum()
         precision = tp / pred_cls.shape[0] if pred_cls.shape[0] else 0
         recall = tp / target_cls.shape[0] if target_cls.shape[0] else 0
-        self.image_metrics.append({"im_file": im_file, "precision": precision, "recall": recall})
+        self.image_metrics[im_name] = {"precision": float(precision), "recall": float(recall)}
 
 
 class DetMetrics(SimpleClass, DataExportMixin):
@@ -1080,7 +1080,7 @@ class DetMetrics(SimpleClass, DataExportMixin):
         """
         for k in self.stats.keys():
             self.stats[k].append(stat[k])
-        self.box.pr_per_image(stat["tp"], stat["target_cls"], stat["pred_cls"], stat["im_file"])
+        self.box.pr_per_image(stat["tp"], stat["target_cls"], stat["pred_cls"], stat["im_name"])
 
     def process(self, save_dir: Path = Path("."), plot: bool = False, on_plot=None) -> dict[str, np.ndarray]:
         """Process predicted results for object detection and update metrics.
@@ -1241,7 +1241,7 @@ class SegmentMetrics(DetMetrics):
                 keys in self.stats.
         """
         super().update_stats(stat)  # update box stats
-        self.seg.pr_per_image(stat["tp_m"], stat["target_cls"], stat["pred_cls"], stat["im_file"])  # update mask stats
+        self.seg.pr_per_image(stat["tp_m"], stat["target_cls"], stat["pred_cls"], stat["im_name"])  # update mask stats
 
     def process(self, save_dir: Path = Path("."), plot: bool = False, on_plot=None) -> dict[str, np.ndarray]:
         """Process the detection and segmentation metrics over the given set of predictions.
@@ -1387,7 +1387,7 @@ class PoseMetrics(DetMetrics):
                 keys in self.stats.
         """
         super().update_stats(stat)  # update box stats
-        self.pose.pr_per_image(stat["tp"], stat["target_cls"], stat["pred_cls"], stat["im_file"])
+        self.pose.pr_per_image(stat["tp"], stat["target_cls"], stat["pred_cls"], stat["im_name"])
 
     def process(self, save_dir: Path = Path("."), plot: bool = False, on_plot=None) -> dict[str, np.ndarray]:
         """Process the detection and pose metrics over the given set of predictions.
