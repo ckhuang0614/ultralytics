@@ -306,8 +306,6 @@ def get_cfg(
     # Merge overrides
     if overrides:
         overrides = cfg2dict(overrides)
-        if "save_dir" not in cfg:
-            overrides.pop("save_dir", None)  # special override keys to ignore
         check_dict_alignment(cfg, overrides)
         cfg = {**cfg, **overrides}  # merge cfg and overrides dicts (prefer overrides)
 
@@ -464,15 +462,17 @@ def _handle_deprecation(custom: dict) -> dict:
     return custom
 
 
-def check_dict_alignment(base: dict, custom: dict, e: Exception | None = None) -> None:
-    """
-    Check alignment between custom and base configuration dictionaries, handling deprecated keys and providing error
+def check_dict_alignment(
+    base: dict, custom: dict, e: Exception | None = None, allowed_custom_keys: set | None = None
+) -> None:
+    """Check alignment between custom and base configuration dictionaries, handling deprecated keys and providing error
     messages for mismatched keys.
 
     Args:
         base (dict): The base configuration dictionary containing valid keys.
         custom (dict): The custom configuration dictionary to be checked for alignment.
         e (Exception | None): Optional error instance passed by the calling function.
+        allowed_custom_keys (set | None): Optional set of additional keys that are allowed in the custom dictionary.
 
     Raises:
         SystemExit: If mismatched keys are found between the custom and base dictionaries.
@@ -492,7 +492,10 @@ def check_dict_alignment(base: dict, custom: dict, e: Exception | None = None) -
     """
     custom = _handle_deprecation(custom)
     base_keys, custom_keys = (frozenset(x.keys()) for x in (base, custom))
-    if mismatched := [k for k in custom_keys if k not in base_keys]:
+    # Allow 'augmentations' as a valid custom parameter for custom Albumentations transforms
+    if allowed_custom_keys is None:
+        allowed_custom_keys = {"augmentations", "save_dir"}
+    if mismatched := [k for k in custom_keys if k not in base_keys and k not in allowed_custom_keys]:
         from difflib import get_close_matches
 
         string = ""
