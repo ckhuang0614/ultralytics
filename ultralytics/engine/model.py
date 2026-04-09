@@ -138,6 +138,10 @@ class Model(torch.nn.Module):
 
         # Load or create new YOLO model
         __import__("os").environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # to avoid deterministic warnings
+
+        if model.lower().startswith(("https://", "http://", "rtsp://", "rtmp://", "tcp://", "ul://")):
+            model = checks.check_file(model, download_dir=SETTINGS["weights_dir"])  # download and return local file
+        model = checks.check_model_file_from_stem(model)  # add suffix, i.e. yolo26 -> yolo26n.pt
         if str(model).endswith((".yaml", ".yml")):
             self._new(model, task=task, verbose=verbose)
         else:
@@ -275,10 +279,6 @@ class Model(torch.nn.Module):
             >>> model._load("yolo26n.pt")
             >>> model._load("path/to/weights.pth", task="detect")
         """
-        if weights.lower().startswith(("https://", "http://", "rtsp://", "rtmp://", "tcp://", "ul://")):
-            weights = checks.check_file(weights, download_dir=SETTINGS["weights_dir"])  # download and return local file
-        weights = checks.check_model_file_from_stem(weights)  # add suffix, i.e. yolo26 -> yolo26n.pt
-
         if str(weights).rpartition(".")[-1] == "pt":
             self.model, self.ckpt = load_checkpoint(weights)
             self.task = self.model.task
@@ -779,10 +779,6 @@ class Model(torch.nn.Module):
                     args["resume"] = False
 
         self.trainer = (trainer or self._smart_load("trainer"))(overrides=args, _callbacks=self.callbacks)
-        if not args.get("resume") and self.ckpt:
-            # Reuse the already-loaded checkpoint model to avoid re-resolving remote weight sources during trainer setup.
-            self.trainer.model = self.trainer.get_model(weights=self.model, cfg=self.model.yaml)
-            self.model = self.trainer.model
 
         self.trainer.train()
         # Update model and cfg after training
