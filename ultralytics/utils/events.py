@@ -61,7 +61,7 @@ class Events:
             "env": ENVIRONMENT,
             "session_id": round(random.random() * 1e15),
             "engagement_time_msec": 1000,
-            "debug_mode":True,
+            "debug_mode": True,
         }
         self.enabled = (
             SETTINGS["sync"]
@@ -80,8 +80,8 @@ class Events:
             backend (object | None, optional): The inference backend instance used during prediction.
             imgsz (int | list | None, optional): Input image size used during prediction.
             model_params (int | None, optional): Total number of model parameters.
-            speed (dict | None, optional): Per-image inference speed dict with keys 'preprocess',
-                'inference', and 'postprocess' (all in milliseconds).
+            speed (dict | None, optional): Per-image inference speed dict with keys 'preprocess', 'inference', and
+                'postprocess' (all in milliseconds).
         """
         if not self.enabled:
             # Events disabled, do nothing
