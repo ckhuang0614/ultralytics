@@ -86,11 +86,7 @@ from ultralytics.nn.tasks import ClassificationModel, DetectionModel, Segmentati
 from ultralytics.utils import (
     ARM64,
     DEFAULT_CFG,
-    IS_DEBIAN_BOOKWORM,
-    IS_DEBIAN_TRIXIE,
     IS_DOCKER,
-    IS_RASPBERRYPI,
-    IS_UBUNTU,
     LINUX,
     LOGGER,
     MACOS,
@@ -106,12 +102,10 @@ from ultralytics.utils import (
 )
 from ultralytics.utils.checks import (
     IS_PYTHON_MINIMUM_3_9,
-    check_apt_requirements,
     check_imgsz,
     check_requirements,
     check_version,
     is_intel,
-    is_sudo_available,
 )
 from ultralytics.utils.files import file_size
 from ultralytics.utils.metrics import batch_probiou
@@ -987,24 +981,8 @@ class Exporter:
     @try_export
     def export_edgetpu(self, tflite_model="", prefix=colorstr("Edge TPU:")):
         """Export YOLO model to Edge TPU format https://coral.ai/docs/edgetpu/models-intro/."""
-        cmd = "edgetpu_compiler --version"
-        help_url = "https://coral.ai/docs/edgetpu/compiler/"
-        assert LINUX, f"export only supported on Linux. See {help_url}"
-        if subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True).returncode != 0:
-            LOGGER.info(f"\n{prefix} export requires Edge TPU compiler. Attempting install from {help_url}")
-            sudo = "sudo " if is_sudo_available() else ""
-            for c in (
-                f"{sudo}mkdir -p /etc/apt/keyrings",
-                f"curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | {sudo}gpg --no-tty --dearmor -o /etc/apt/keyrings/google.gpg",
-                f'echo "deb [signed-by=/etc/apt/keyrings/google.gpg] https://packages.cloud.google.com/apt coral-edgetpu-stable main" | {sudo}tee /etc/apt/sources.list.d/coral-edgetpu.list',
-            ):
-                subprocess.run(c, shell=True, check=True)
-            check_apt_requirements(["edgetpu-compiler"])
-
-        ver = subprocess.run(cmd, shell=True, capture_output=True, check=True).stdout.decode().rsplit(maxsplit=1)[-1]
         from ultralytics.utils.export.tensorflow import tflite2edgetpu
 
-        LOGGER.info(f"\n{prefix} starting export with Edge TPU compiler {ver}...")
         tflite2edgetpu(tflite_file=tflite_model, output_dir=tflite_model.parent, prefix=prefix)
         f = str(tflite_model).replace(".tflite", "_edgetpu.tflite")  # Edge TPU model
         self._add_tflite_metadata(f)
@@ -1043,20 +1021,6 @@ class Exporter:
         if getattr(self.model, "end2end", False):
             raise ValueError("IMX export is not supported for end2end models.")
         from ultralytics.utils.export.imx import torch2imx
-
-        # Install Java>=17
-        try:
-            java_output = subprocess.run(["java", "--version"], check=True, capture_output=True).stdout.decode()
-            version_match = re.search(r"(?:openjdk|java) (\d+)", java_output)
-            java_version = int(version_match.group(1)) if version_match else 0
-            assert java_version >= 17, "Java version too old"
-        except (FileNotFoundError, subprocess.CalledProcessError, AssertionError):
-            if IS_UBUNTU or IS_DEBIAN_TRIXIE:
-                LOGGER.info(f"\n{prefix} installing Java 21 for Ubuntu...")
-                check_apt_requirements(["openjdk-21-jre"])
-            elif IS_RASPBERRYPI or IS_DEBIAN_BOOKWORM:
-                LOGGER.info(f"\n{prefix} installing Java 17 for Raspberry Pi or Debian ...")
-                check_apt_requirements(["openjdk-17-jre"])
 
         return torch2imx(
             self.model,

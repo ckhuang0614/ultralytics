@@ -9,8 +9,8 @@ import numpy as np
 import torch
 
 from ultralytics.nn.modules import Detect, Pose, Pose26
-from ultralytics.utils import LOGGER, MACOS
-from ultralytics.utils.checks import check_requirements, check_version
+from ultralytics.utils import LINUX, LOGGER, MACOS
+from ultralytics.utils.checks import check_apt_requirements, check_requirements, check_version
 from ultralytics.utils.downloads import attempt_download_asset
 from ultralytics.utils.files import spaces_in_path
 from ultralytics.utils.tal import make_anchors
@@ -197,6 +197,26 @@ def tflite2edgetpu(tflite_file: str | Path, output_dir: str | Path, prefix: str 
         for optimal performance on Google's Edge TPU hardware accelerator.
     """
     import subprocess
+
+    from ultralytics.utils.checks import is_sudo_available
+
+    # Install Edge TPU compiler if not found
+    check_cmd = "edgetpu_compiler --version"
+    help_url = "https://coral.ai/docs/edgetpu/compiler/"
+    assert LINUX, f"export only supported on Linux. See {help_url}"
+    if subprocess.run(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True).returncode != 0:
+        LOGGER.info(f"\n{prefix} export requires Edge TPU compiler. Attempting install from {help_url}")
+        sudo = "sudo " if is_sudo_available() else ""
+        for c in (
+            f"{sudo}mkdir -p /etc/apt/keyrings",
+            f"curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | {sudo}gpg --no-tty --dearmor -o /etc/apt/keyrings/google.gpg",
+            f'echo "deb [signed-by=/etc/apt/keyrings/google.gpg] https://packages.cloud.google.com/apt coral-edgetpu-stable main" | {sudo}tee /etc/apt/sources.list.d/coral-edgetpu.list',
+        ):
+            subprocess.run(c, shell=True, check=True)
+        check_apt_requirements(["edgetpu-compiler"])
+
+    ver = subprocess.run(check_cmd, shell=True, capture_output=True, check=True).stdout.decode().rsplit(maxsplit=1)[-1]
+    LOGGER.info(f"\n{prefix} starting export with Edge TPU compiler {ver}...")
 
     cmd = (
         "edgetpu_compiler "
