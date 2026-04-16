@@ -203,16 +203,11 @@ class DistillationModel(nn.Module):
             )
 
         distill_loss_detach = distill_loss.detach()
-        batch_size = batch["img"].shape[0]
-        loss_distill = distill_loss * batch_size
+        loss_distill = distill_loss * batch["img"].shape[0]
         return torch.cat([regular_loss, loss_distill]), torch.cat([regular_loss_detach, distill_loss_detach])
 
     def loss_sl2(
-        self,
-        student_feat: torch.Tensor,
-        teacher_feat: torch.Tensor,
-        feat_idx: int = 0,
-        teacher_scores: tuple | None = None,
+        self, student_feat: torch.Tensor, teacher_feat: torch.Tensor, feat_idx: int, teacher_scores: tuple
     ) -> torch.Tensor:
         """Compute score-weighted L2 distillation loss for a feature pair.
 
@@ -220,7 +215,7 @@ class DistillationModel(nn.Module):
             student_feat (torch.Tensor): Student feature tensor of shape (N, C, H, W).
             teacher_feat (torch.Tensor): Teacher feature tensor of shape (N, C, H, W).
             feat_idx (int): Index of the feature level for selecting teacher scores.
-            teacher_scores (tuple | None): Tuple of score tensors for each feature level.
+            teacher_scores (tuple): Tuple of score tensors for each feature level.
 
         Returns:
             (torch.Tensor): The computed score-weighted L2 loss.
