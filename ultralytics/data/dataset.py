@@ -344,10 +344,11 @@ class DepthDataset(YOLODataset):
     def build_transforms(self, hyp=None):
         """Build transforms for depth estimation with augmentation.
 
-        Applies LetterBox, random horizontal flip, and color jitter. No mosaic, mixup,
-        or perspective transforms since they create discontinuities in depth maps.
+        Applies random scale/crop, LetterBox, horizontal flip, and color jitter.
+        No mosaic, mixup, or perspective transforms since they create discontinuities.
         """
         transforms = Compose([
+            DepthRandomScale(scale_range=(0.5, 1.5), target_size=self.imgsz, p=0.5),
             LetterBox(new_shape=(self.imgsz, self.imgsz), auto=False, scale_fill=True),
             DepthRandomFlip(p=0.5),
             DepthColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.05),
@@ -375,6 +376,54 @@ class DepthDataset(YOLODataset):
             # Re-index batch_idx is not needed for depth (no detection targets)
             pass
         return new_batch
+
+
+class DepthRandomScale:
+    """Random scale and crop for depth estimation (applied to both image and depth).
+
+    Randomly scales the image/depth by a factor in [scale_range], then random-crops
+    to target_size. This improves scale invariance for zero-shot depth models.
+    """
+
+    def __init__(self, scale_range=(0.5, 1.5), target_size=640, p=0.5):
+        self.scale_min, self.scale_max = scale_range
+        self.target_size = target_size
+        self.p = p
+
+    def __call__(self, labels):
+        if random.random() >= self.p:
+            return labels
+        img = labels.get("img")
+        depth = labels.get("depth")
+        if img is None:
+            return labels
+
+        h, w = img.shape[:2]
+        scale = random.uniform(self.scale_min, self.scale_max)
+        new_h, new_w = int(h * scale), int(w * scale)
+
+        # Ensure minimum size
+        new_h = max(new_h, self.target_size)
+        new_w = max(new_w, self.target_size)
+
+        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        if depth is not None:
+            depth = cv2.resize(depth, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            # Scale depth values are preserved (metric depth doesn't change with image scale)
+
+        # Random crop to target_size
+        if new_h > self.target_size or new_w > self.target_size:
+            top = random.randint(0, max(0, new_h - self.target_size))
+            left = random.randint(0, max(0, new_w - self.target_size))
+            img = img[top:top + self.target_size, left:left + self.target_size]
+            if depth is not None:
+                depth = depth[top:top + self.target_size, left:left + self.target_size]
+
+        labels["img"] = img
+        labels["resized_shape"] = img.shape[:2]
+        if depth is not None:
+            labels["depth"] = depth
+        return labels
 
 
 class DepthRandomFlip:
