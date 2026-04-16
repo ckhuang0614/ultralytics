@@ -197,12 +197,11 @@ class DistillationModel(nn.Module):
             student_feat = self.decouple_outputs(self._student_feats[feat_idx])
             if isinstance(teacher_feat, dict):
                 continue
-            student_feat = (
-                self.projector[i](student_feat)
-                if student_feat.ndim == 4
-                else student_feat
+            if student_feat.ndim == 4:
+                student_feat = self.projector[i](student_feat)
+            distill_loss += (
+                self.loss_sl2(student_feat, teacher_feat, feat_idx=i, teacher_scores=teacher_scores) * self.dis
             )
-            distill_loss += self.loss_sl2(student_feat, teacher_feat, feat_idx=i, teacher_scores=teacher_scores) * self.dis
 
         distill_loss_detach = distill_loss.detach()
         batch_size = batch["img"].shape[0]
