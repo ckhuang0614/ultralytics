@@ -1034,6 +1034,7 @@ class Metric(SimpleClass):
         self.image_metrics[im_name] = {
             "precision": float(precision),
             "recall": float(recall),
+            "f1": float(2 * (precision * recall) / (precision + recall)) if (precision + recall) else 0.0,
             "tp": tp,
             "fp": fp,
             "fn": fn,
