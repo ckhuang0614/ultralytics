@@ -45,14 +45,16 @@ class DeepXBackend(BaseBackend):
             ):
                 subprocess.run(c, shell=True, check=True, stdout=subprocess.DEVNULL)
             check_apt_requirements(["sixfab-dx"])
-            
+
         try:
             from dx_engine import InferenceEngine
         except ImportError:
             if IS_DEBIAN_TRIXIE:
                 wheels = sorted(Path("/opt/sixfab-dx/wheels").glob("dx_engine-*.whl"))
                 if not wheels:
-                    raise FileNotFoundError("No dx_engine wheel found in /opt/sixfab-dx/wheels/. Ensure sixfab-dx is installed.")
+                    raise FileNotFoundError(
+                        "No dx_engine wheel found in /opt/sixfab-dx/wheels/. Ensure sixfab-dx is installed."
+                    )
                 subprocess.run(["pip", "install", str(wheels[-1])], check=True)
             else:
                 raise OSError(
@@ -60,8 +62,10 @@ class DeepXBackend(BaseBackend):
                     "Please install dx_engine manually and try again."
                 )
             from dx_engine import InferenceEngine
-        
-        ver = subprocess.run(cmd, capture_output=True, check=True).stdout.decode().splitlines()[0].split()[-1].lstrip("v")
+
+        ver = (
+            subprocess.run(cmd, capture_output=True, check=True).stdout.decode().splitlines()[0].split()[-1].lstrip("v")
+        )
         LOGGER.info(f"Loading {weight} for DeepX inference... (runtime v{ver})")
 
         w = Path(weight)
