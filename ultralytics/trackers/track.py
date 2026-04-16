@@ -160,8 +160,11 @@ def on_predict_postprocess_end(predictor: object, persist: bool = False) -> None
             predictor.vid_path[i if is_stream else 0] = vid_path
 
         det = (result.obb if is_obb else result.boxes).cpu().numpy()
-        dets_del = dets_del_list[i] if dets_del_list is not None else None
-        tracks = tracker.update(det, result.orig_img, getattr(result, "feats", None), dets_del=dets_del)
+        if isinstance(tracker, TRACKTRACK):
+            dets_del = dets_del_list[i] if dets_del_list is not None else None
+            tracks = tracker.update(det, result.orig_img, getattr(result, "feats", None), dets_del=dets_del)
+        else:
+            tracks = tracker.update(det, result.orig_img, getattr(result, "feats", None))
         if len(tracks) == 0:
             continue
         idx = tracks[:, -1].astype(int)
