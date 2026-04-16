@@ -382,7 +382,6 @@ Ultralytics provides ready-to-use solutions for common computer vision applicati
         ```bash
         yolo solutions security show=True
         yolo solutions security source="path/to/video.mp4" # specify video file path
-        yolo solutions security records=10                 # set detection threshold for alerts
         ```
 
     === "Parking"

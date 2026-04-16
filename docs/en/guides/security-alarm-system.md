@@ -82,7 +82,7 @@ The Security Alarm System Project utilizing Ultralytics YOLO26 integrates advanc
     === "CLI"
 
         ```bash
-        yolo solutions security source="path/to/video.mp4" show=True records=5
+        yolo solutions security source="path/to/video.mp4" show=True
         ```
 
         !!! note

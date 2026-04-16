@@ -118,7 +118,7 @@ SOLUTIONS_HELP_MSG = f"""
         yolo solutions region source="path/to/video.mp4" region="[(20, 400), (1080, 400), (1080, 360), (20, 360)]"
 
     8. Run security alarm monitoring (email alerts require Python API)
-        yolo solutions security source="path/to/video.mp4" records=5
+        yolo solutions security source="path/to/video.mp4"
 
     9. Monitor parking occupancy (create JSON annotations first via Python ParkingPtsSelection)
         yolo solutions parking source="path/to/video.mp4" json_file="bounding_boxes.json"
